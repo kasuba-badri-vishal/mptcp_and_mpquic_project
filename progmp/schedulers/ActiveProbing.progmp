@@ -1,0 +1,36 @@
+SCHEDULER ActiveProbing;
+
+VAR probingIntervallRttMultiplier = 5; /* Tuning parameter */
+
+VAR sbfCandidates = SUBFLOWS.FILTER(sbf => !sbf.THROTTLED AND sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED AND !sbf.LOSSY); 
+
+IF (sbfCandidates.EMPTY) { RETURN; } 
+
+IF (!RQ.EMPTY) {
+  VAR sbfCandidate = sbfCandidates.FILTER(sbf =>
+    sbf.HAS_WINDOW_FOR(RQ.TOP) AND
+    !RQ.TOP.SENT_ON(sbf)).MIN(sbf => sbf.RTT);
+  IF (sbfCandidate != NULL) {
+    sbfCandidate.PUSH(RQ.POP());
+    RETURN;
+  }
+}
+
+IF (Q.EMPTY) { RETURN; }
+
+/* Schedule as usual. There is at least one subflow */ 
+VAR packetToSend = Q.TOP; 
+VAR bestSbf = sbfCandidates.MIN(sbf => sbf.RTT); 
+bestSbf.PUSH(Q.POP()); 
+
+/* Reset subflow probing timeout */ 
+bestSbf.SET_USER(CURRENT_TIME_MS + (bestSbf.RTT * probingIntervallRttMultiplier)); 
+
+IF (Q.EMPTY AND packetToSend.PSH) { 
+  /* End of a burst ? */
+  FOREACH (VAR sbf IN sbfCandidates.FILTER(sbf => sbf.USER < CURRENT_TIME_MS)) {
+    /* Send redundant packet and reset subflow probing timeout */
+    sbf.PUSH(packetToSend);
+    sbf.SET_USER(CURRENT_TIME_MS + (sbf.RTT * probingIntervallRttMultiplier));
+  }
+}

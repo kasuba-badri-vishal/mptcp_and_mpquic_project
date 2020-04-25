@@ -1,0 +1,35 @@
+SCHEDULER ThroughputPreferenceAware;
+
+VAR sbfCandidates = SUBFLOWS.FILTER(sbf => sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED 
+    AND !sbf.THROTTLED AND !sbf.LOSSY);
+IF(sbfCandidates.EMPTY) { RETURN; }
+
+IF (!RQ.EMPTY) { 
+    VAR sbfCandidate = sbfCandidates.FILTER(sbf => sbf.HAS_WINDOW_FOR(RQ.TOP) 
+        AND !RQ.TOP.SENT_ON(sbf)).MIN(sbf => sbf.RTT); 
+    IF (sbfCandidate != NULL) { 
+        sbfCandidate.PUSH(RQ.POP()); 
+        RETURN; 
+    } 
+} 
+
+VAR targetBwKB = R1;
+VAR prefAhead = R4;
+VAR factor = 100;
+VAR maxAhead = 100 * factor;
+
+VAR prefS = sbfCandidates.FILTER(s=>!s.IS_BACKUP).MIN(s=>s.RTT);
+IF (prefS != NULL) {
+    prefS.PUSH(Q.POP());
+    IF (R4 < maxAhead) {
+        SET(R4, R4 + factor); 
+    } 
+} ELSE {
+    VAR mss = 1400;
+    VAR capKB = prefS.CWND / prefS.RTT_MS * mss;
+    VAR ratio = factor * capKB / (targetBwKB - capKB);
+    IF (prefAhead > ratio AND capKB < targetBwKB) {
+        sbfCandidates.MIN(s => s.RTT).PUSH(Q.POP());
+        SET(R4, prefAhead - ratio); 
+	} 
+}

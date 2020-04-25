@@ -1,0 +1,39 @@
+SCHEDULER RoundRobin;
+
+IF (!RQ.EMPTY) {
+  VAR sbfCandidate = SUBFLOWS.FILTER(sbf => !sbf.THROTTLED AND sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED AND !sbf.LOSSY AND sbf.HAS_WINDOW_FOR(RQ.TOP) AND !RQ.TOP.SENT_ON(sbf)).MIN(sbf => sbf.RTT);
+  IF (sbfCandidate != NULL) {
+    sbfCandidate.PUSH(RQ.POP());
+    RETURN;
+  }
+}
+
+/* tuning parameters */
+VAR quota = 1; 
+VAR cwnd_limited = 1; /* 1: tries to fill the cwnd on all subflows. */
+
+VAR sbfCandidates = SUBFLOWS.FILTER(sbf => !sbf.THROTTLED AND sbf.USER < quota AND !sbf.LOSSY AND (cwnd_limited == 0 OR sbf.CWND > sbf.QUEUED + sbf.SKBS_IN_FLIGHT));
+
+/* Take subflow which started to use quota */
+VAR inUse = sbfCandidates.FILTER(sbf => sbf.USER != 0 AND sbf.USER < quota).GET(0);
+IF (inUse != NULL) {
+  IF(inUse.CWND > inUse.QUEUED + inUse.SKBS_IN_FLIGHT) {
+    inUse.PUSH(Q.POP());
+    inUse.SET_USER(inUse.USER + 1);
+  }
+  RETURN;
+}
+
+VAR fresh = sbfCandidates.GET(0);
+IF (fresh != NULL) {
+  IF(fresh.CWND > fresh.QUEUED + fresh.SKBS_IN_FLIGHT) {
+    fresh.SET_USER(1);
+    fresh.PUSH(Q.POP());
+  }
+  RETURN;
+}
+
+/* reset quota */
+FOREACH(VAR sbf IN SUBFLOWS) {
+  sbf.SET_USER(0);
+}

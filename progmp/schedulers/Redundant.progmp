@@ -1,0 +1,23 @@
+SCHEDULER Redundant;
+
+VAR sbfCandidates = SUBFLOWS.FILTER(sbf => sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED AND !sbf.THROTTLED AND !sbf.LOSSY);
+
+IF(sbfCandidates.EMPTY) { RETURN; }
+
+IF (!RQ.EMPTY) {
+  VAR sbfCandidate = sbfCandidates.FILTER(sbf => sbf.HAS_WINDOW_FOR(RQ.TOP) AND !RQ.TOP.SENT_ON(sbf)).MIN(sbf => sbf.RTT);
+  IF (sbfCandidate != NULL) {
+    sbfCandidate.PUSH(RQ.POP());
+    RETURN;
+  }
+}
+
+FOREACH(VAR sbf IN sbfCandidates) {
+  VAR skb = QU.FILTER(s => !s.SENT_ON(sbf)).TOP;
+  /* are all QU packets sent on this sbf? */
+  IF(skb != NULL) {
+    sbf.PUSH(skb);
+  } ELSE {
+    sbf.PUSH(Q.POP());
+  }
+}

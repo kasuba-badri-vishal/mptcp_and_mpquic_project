@@ -1,0 +1,26 @@
+SCHEDULER api_example;
+
+PRINT("Scheduler called with R1=%d", R1);
+PRINT("Scheduler called with R2=%d", R2);
+PRINT("Scheduler called with R3=%d", R3);
+PRINT("Scheduler called with R4=%d", R4);
+PRINT("Scheduler called with R5=%d", R5);
+PRINT("Scheduler called with R6=%d", R6);
+PRINT("Q.TOP.USER = %d", Q.TOP.USER);
+
+VAR sbfCandidates = SUBFLOWS.FILTER(sbf => sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED AND !sbf.THROTTLED AND !sbf.LOSSY);
+IF(sbfCandidates.EMPTY) {
+  RETURN;
+}
+
+IF (!RQ.EMPTY) {
+  VAR sbfCandidate = sbfCandidates.FILTER(sbf => sbf.HAS_WINDOW_FOR(RQ.TOP) AND !RQ.TOP.SENT_ON(sbf)).MIN(sbf => sbf.RTT);
+  IF (sbfCandidate != NULL) {
+    sbfCandidate.PUSH(RQ.POP());
+    RETURN;
+  }
+} 
+
+IF (!Q.EMPTY) {
+  sbfCandidates.FILTER(sbf => sbf.HAS_WINDOW_FOR(Q.TOP)).MIN(sbf => sbf.RTT).PUSH(Q.POP());
+}

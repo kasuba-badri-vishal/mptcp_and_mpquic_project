@@ -1,0 +1,24 @@
+SCHEDULER BackupControlled;
+
+VAR considerBackups = (R1 == 1) OR SUBFLOWS.FILTER(sbf => !sbf.IS_BACKUP).EMPTY;
+VAR sbfCandidates = SUBFLOWS.FILTER(sbf => !sbf.THROTTLED AND sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED AND !sbf.LOSSY AND ((sbf.IS_BACKUP AND considerBackups) OR (!sbf.IS_BACKUP AND !considerBackups)));
+
+IF (!RQ.EMPTY) {
+  VAR sbfCandidate = sbfCandidates.FILTER(sbf => sbf.HAS_WINDOW_FOR(RQ.TOP) AND !RQ.TOP.SENT_ON(sbf)).MIN(sbf => sbf.RTT);
+  IF (sbfCandidate != NULL) {
+    sbfCandidate.PUSH(RQ.POP());
+    RETURN;
+  } ELSE IF (!considerBackups) {
+    VAR sentOnAllNonBackupSubflows = SUBFLOWS.FILTER(sbf => !RQ.TOP.SENT_ON(sbf)).EMPTY;
+    
+    VAR backupSbfCandidate = SUBFLOWS.FILTER(sbf => !sbf.THROTTLED AND sbf.CWND > sbf.SKBS_IN_FLIGHT + sbf.QUEUED AND !sbf.LOSSY AND sbf.IS_BACKUP).MIN(sbf => sbf.RTT);
+    IF (backupSbfCandidate != NULL) {
+        backupSbfCandidate.PUSH(RQ.POP());
+        RETURN;
+    }
+  }
+}
+
+IF (!Q.EMPTY) {
+  sbfCandidates.FILTER(sbf => sbf.HAS_WINDOW_FOR(Q.TOP)).MIN(sbf => sbf.RTT).PUSH(Q.POP());
+}
