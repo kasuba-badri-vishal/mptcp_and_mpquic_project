@@ -1,0 +1,10 @@
+scheduler,time
+MinRTT,47.159635066
+MinVariance,49.738726
+RoundRobin,49.85501003265381
+Redundant,48.00095200538635
+sel_compensative,48.4832501411438
+RTTandPreferenceAware,49.555078983306885
+only_Ethernet1,48.43684387207031
+only_wifi,98.15437817573547
+only_Ethernet,86.7529890537262
